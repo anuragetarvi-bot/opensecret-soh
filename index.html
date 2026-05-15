@@ -68,6 +68,7 @@
   .hidden { display: none; }
   .footer { font-size: 11px; color: #bbb; text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #f0f0f0; }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div class="app">
@@ -203,6 +204,11 @@
 
 <script>
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw3-c7Mz_DNLVDaU20ncNqpOgPJCdsQkBPNA0vUK3dEOP8tmZdAjOe0OY2HyztHQSJD/exec";
+const CLIENT_ID = "632567777271-9sd1p3dge6uh7mv9bkavsdt575ok2qfj.apps.googleusercontent.com";
+const FOLDER_ID = "1ov3vRM1VPGrHl6fiR3q4y9t9YfgoTeON";
+const SCOPES = "https://www.googleapis.com/auth/drive.file";
+let accessToken = null;
+let tokenClient = null;
 
 const AREA_DATA = {
   Satish: {
@@ -252,6 +258,7 @@ const ALL_SKUS = Object.values(SKUS).flat();
 let gpsCoords = null;
 let uploadedFileBase64 = "";
 let uploadedFileName = "";
+let uploadedFile = null;
 
 function shortName(s) {
   return s.replace("OS Unjunked ", "").replace("OS ", "");
@@ -379,35 +386,106 @@ function getOutlet() {
 function handleUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  uploadedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  uploadedFileName = (file.name || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, '_');
+  uploadedFile = file;
 
   const reader = new FileReader();
   reader.onload = e => {
     const img = new window.Image();
     img.onload = () => {
-      // Resize to max 800px wide, compress to 60% quality
-      const MAX = 400;
+      const MAX = 600;
       let w = img.width, h = img.height;
       if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-
       const canvas = document.createElement("canvas");
       canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-
-      uploadedFileBase64 = canvas.toDataURL("image/jpeg", 0.4);
-
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      uploadedFileBase64 = canvas.toDataURL("image/jpeg", 0.5);
       const previewImg = document.getElementById("previewImg");
       previewImg.src = uploadedFileBase64;
       previewImg.style.display = "block";
-
       const sizeKB = Math.round(uploadedFileBase64.length * 0.75 / 1024);
-      document.getElementById("uploadFilename").textContent = "📎 " + file.name + " (" + sizeKB + " KB)";
+      document.getElementById("uploadFilename").textContent = "📎 " + uploadedFileName + " (" + sizeKB + " KB)";
       document.getElementById("uploadPreview").style.display = "block";
     };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+function initGoogleAuth() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (tokenResponse) => {
+      accessToken = tokenResponse.access_token;
+    }
+  });
+}
+
+async function uploadToDrive(base64Data, fileName) {
+  return new Promise((resolve, reject) => {
+    if (!accessToken) {
+      tokenClient.requestAccessToken();
+      // Wait for token
+      let waited = 0;
+      const check = setInterval(() => {
+        waited += 200;
+        if (accessToken) {
+          clearInterval(check);
+          doUpload(base64Data, fileName, resolve, reject);
+        } else if (waited > 15000) {
+          clearInterval(check);
+          reject("Auth timeout");
+        }
+      }, 200);
+    } else {
+      doUpload(base64Data, fileName, resolve, reject);
+    }
+  });
+}
+
+function doUpload(base64Data, fileName, resolve, reject) {
+  const byteString = atob(base64Data.split(',')[1]);
+  const mimeType = "image/jpeg";
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+  const blob = new Blob([ab], {type: mimeType});
+
+  const metadata = {
+    name: fileName,
+    mimeType: mimeType,
+    parents: [FOLDER_ID]
+  };
+
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(metadata)], {type: "application/json"}));
+  form.append("file", blob);
+
+  fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + accessToken },
+    body: form
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.id) {
+      // Make file public
+      fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + accessToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({role: "reader", type: "anyone"})
+      })
+      .then(() => resolve(data.webViewLink))
+      .catch(() => resolve(data.webViewLink));
+    } else {
+      reject("Upload failed: " + JSON.stringify(data));
+    }
+  })
+  .catch(err => reject(err));
 }
 
 function acquireGPS() {
@@ -464,7 +542,7 @@ function resetForm() {
   document.getElementById("uploadPreview").style.display = "none";
   document.getElementById("previewImg").src = "";
   document.getElementById("uploadFilename").textContent = "";
-  uploadedFileBase64 = ""; uploadedFileName = "";
+  uploadedFileBase64 = ""; uploadedFileName = ""; uploadedFile = null;
   document.querySelectorAll("input[data-type]").forEach(i => i.value = 0);
   updateTotals();
   setToday();
@@ -498,40 +576,52 @@ function submitData() {
   const btn = document.getElementById("submitBtn");
   btn.disabled = true; btn.textContent = "Submitting...";
 
-  const form = new FormData();
-  form.append("row", JSON.stringify(row));
-  if (uploadedFileBase64) {
-    // Convert base64 to blob and append as actual file
-    const byteString = atob(uploadedFileBase64.split(',')[1]);
-    const mimeType = uploadedFileBase64.split(',')[0].split(':')[1].split(';')[0];
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-    const blob = new Blob([ab], {type: mimeType});
-    form.append("file", blob, uploadedFileName);
+  // Upload photo to Drive first if exists, then submit row
+  async function doSubmit() {
+    let photoLink = "No photo";
+
+    if (uploadedFileBase64) {
+      try {
+        btn.textContent = "Uploading photo...";
+        photoLink = await uploadToDrive(uploadedFileBase64, uploadedFileName);
+      } catch(err) {
+        photoLink = "Photo upload failed";
+      }
+    }
+
+    row[8] = photoLink;
+    btn.textContent = "Saving to sheet...";
+
+    // Send row to Apps Script
+    const params = new URLSearchParams();
+    params.append("row", JSON.stringify(row));
+
+    fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: params.toString()
+    })
+    .then(() => {
+      showToast("✓ Submitted successfully!", "success");
+      resetForm();
+    })
+    .catch(() => {
+      showToast("Submission failed. Check internet connection.", "error");
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = "Submit to Google Sheet";
+    });
   }
 
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    mode: "no-cors",
-    body: form
-  })
-  .then(() => {
-    showToast("✓ Submitted successfully!", "success");
-    resetForm();
-  })
-  .catch(() => {
-    showToast("Submission failed. Check internet connection.", "error");
-  })
-  .finally(() => {
-    btn.disabled = false;
-    btn.textContent = "Submit to Google Sheet";
-  });
+  doSubmit();
 }
 
 buildSKUs();
 setToday();
 acquireGPS();
+window.onload = () => { if (window.google) initGoogleAuth(); else setTimeout(initGoogleAuth, 2000); };
 </script>
 </body>
 </html>
