@@ -498,17 +498,23 @@ function submitData() {
   const btn = document.getElementById("submitBtn");
   btn.disabled = true; btn.textContent = "Submitting...";
 
-  const payload = { row: row };
+  const form = new FormData();
+  form.append("row", JSON.stringify(row));
   if (uploadedFileBase64) {
-    payload.fileData = uploadedFileBase64;
-    payload.fileName = uploadedFileName;
+    // Convert base64 to blob and append as actual file
+    const byteString = atob(uploadedFileBase64.split(',')[1]);
+    const mimeType = uploadedFileBase64.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+    const blob = new Blob([ab], {type: mimeType});
+    form.append("file", blob, uploadedFileName);
   }
 
   fetch(SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: form
   })
   .then(() => {
     showToast("✓ Submitted successfully!", "success");
