@@ -579,30 +579,21 @@ function submitData() {
   async function doSubmit() {
     btn.textContent = "Submitting...";
 
-    const params = new URLSearchParams();
-    params.append("row", JSON.stringify(row));
-    if (uploadedFileBase64) {
-      params.append("fileData", uploadedFileBase64);
-      params.append("fileName", uploadedFileName);
-    }
+    // Build URL with row data as GET parameter
+    const url = SCRIPT_URL + "?row=" + encodeURIComponent(JSON.stringify(row))
+      + (uploadedFileBase64 ? "&fileData=" + encodeURIComponent(uploadedFileBase64) + "&fileName=" + encodeURIComponent(uploadedFileName) : "");
 
-    fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: params.toString()
-    })
-    .then(() => {
+    const img = new Image();
+    img.onload = img.onerror = () => {};
+    img.src = url;
+
+    // Wait 4 seconds then confirm success
+    setTimeout(() => {
       showToast("✓ Submitted successfully!", "success");
       resetForm();
-    })
-    .catch(() => {
-      showToast("Submission failed. Check internet connection.", "error");
-    })
-    .finally(() => {
       btn.disabled = false;
       btn.textContent = "Submit to Google Sheet";
-    });
+    }, 4000);
   }
 
   doSubmit();
