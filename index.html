@@ -498,19 +498,31 @@ function submitData() {
   const btn = document.getElementById("submitBtn");
   btn.disabled = true; btn.textContent = "Submitting...";
 
-  const payload = { row: row };
-  if (uploadedFileBase64) {
-    payload.fileData = uploadedFileBase64;
-    payload.fileName = uploadedFileName;
-  }
+  // Step 1: Always send row data first (no photo)
+  const rowPayload = { row: row };
 
   fetch(SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(rowPayload)
   })
   .then(() => {
+    // Step 2: If photo exists, send it separately
+    if (uploadedFileBase64) {
+      const photoPayload = {
+        updatePhoto: true,
+        rowId: row[0] + "_" + row[1] + "_" + row[4], // date_time_outlet as unique ID
+        fileData: uploadedFileBase64,
+        fileName: uploadedFileName
+      };
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(photoPayload)
+      }).catch(() => {});
+    }
     showToast("✓ Submitted successfully!", "success");
     resetForm();
   })
