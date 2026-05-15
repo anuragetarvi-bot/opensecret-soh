@@ -379,15 +379,33 @@ function getOutlet() {
 function handleUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  uploadedFileName = file.name;
-  document.getElementById("uploadFilename").textContent = "📎 " + file.name;
-  document.getElementById("uploadPreview").style.display = "block";
+  uploadedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+
   const reader = new FileReader();
   reader.onload = e => {
-    uploadedFileBase64 = e.target.result;
-    const img = document.getElementById("previewImg");
+    const img = new window.Image();
+    img.onload = () => {
+      // Resize to max 800px wide, compress to 60% quality
+      const MAX = 800;
+      let w = img.width, h = img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+
+      uploadedFileBase64 = canvas.toDataURL("image/jpeg", 0.6);
+
+      const previewImg = document.getElementById("previewImg");
+      previewImg.src = uploadedFileBase64;
+      previewImg.style.display = "block";
+
+      const sizeKB = Math.round(uploadedFileBase64.length * 0.75 / 1024);
+      document.getElementById("uploadFilename").textContent = "📎 " + file.name + " (" + sizeKB + " KB)";
+      document.getElementById("uploadPreview").style.display = "block";
+    };
     img.src = e.target.result;
-    img.style.display = "block";
   };
   reader.readAsDataURL(file);
 }
