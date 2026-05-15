@@ -576,25 +576,15 @@ function submitData() {
   const btn = document.getElementById("submitBtn");
   btn.disabled = true; btn.textContent = "Submitting...";
 
-  // Upload photo to Drive first if exists, then submit row
   async function doSubmit() {
-    let photoLink = "No photo";
+    btn.textContent = "Submitting...";
 
-    if (uploadedFileBase64) {
-      try {
-        btn.textContent = "Uploading photo...";
-        photoLink = await uploadToDrive(uploadedFileBase64, uploadedFileName);
-      } catch(err) {
-        photoLink = "Photo upload failed";
-      }
-    }
-
-    row[8] = photoLink;
-    btn.textContent = "Saving to sheet...";
-
-    // Send row to Apps Script
     const params = new URLSearchParams();
     params.append("row", JSON.stringify(row));
+    if (uploadedFileBase64) {
+      params.append("fileData", uploadedFileBase64);
+      params.append("fileName", uploadedFileName);
+    }
 
     fetch(SCRIPT_URL, {
       method: "POST",
