@@ -480,41 +480,29 @@ function submitData() {
   const btn = document.getElementById("submitBtn");
   btn.disabled = true; btn.textContent = "Submitting...";
 
-  // iframe form POST - bypasses CORS completely
-  const iframe = document.createElement("iframe");
-  iframe.name = "hidden_iframe";
-  iframe.style.display = "none";
-  document.body.appendChild(iframe);
-
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = SCRIPT_URL;
-  form.target = "hidden_iframe";
-  form.style.display = "none";
-
-  const addField = (name, value) => {
-    const inp = document.createElement("input");
-    inp.type = "hidden"; inp.name = name; inp.value = value;
-    form.appendChild(inp);
-  };
-
-  addField("row", JSON.stringify(row));
+  const payload = { row: row };
   if (uploadedFileBase64) {
-    addField("fileName", uploadedFileName);
-    addField("fileData", uploadedFileBase64);
+    payload.fileData = uploadedFileBase64;
+    payload.fileName = uploadedFileName;
   }
 
-  document.body.appendChild(form);
-
-  setTimeout(() => {
-    showToast("✓ Submitted! Check your sheet.", "success");
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+  .then(() => {
+    showToast("✓ Submitted successfully!", "success");
     resetForm();
+  })
+  .catch(() => {
+    showToast("Submission failed. Check internet connection.", "error");
+  })
+  .finally(() => {
     btn.disabled = false;
     btn.textContent = "Submit to Google Sheet";
-    try { document.body.removeChild(form); document.body.removeChild(iframe); } catch(e) {}
-  }, 3000);
-
-  form.submit();
+  });
 }
 
 buildSKUs();
