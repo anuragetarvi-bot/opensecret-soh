@@ -579,20 +579,43 @@ function submitData() {
   async function doSubmit() {
     btn.textContent = "Submitting...";
 
-    // Build URL with row data as GET parameter
-    const url = SCRIPT_URL + "?row=" + encodeURIComponent(JSON.stringify(row))
-      + (uploadedFileBase64 ? "&fileData=" + encodeURIComponent(uploadedFileBase64) + "&fileName=" + encodeURIComponent(uploadedFileName) : "");
+    // Use hidden iframe + form POST - most reliable for Apps Script
+    const iframeName = "submit_iframe_" + Date.now();
+    const iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
 
-    const img = new Image();
-    img.onload = img.onerror = () => {};
-    img.src = url;
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = SCRIPT_URL;
+    form.target = iframeName;
+    form.style.display = "none";
+    form.enctype = "application/x-www-form-urlencoded";
 
-    // Wait 4 seconds then confirm success
+    const addHidden = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    addHidden("row", JSON.stringify(row));
+    if (uploadedFileBase64) {
+      addHidden("fileData", uploadedFileBase64);
+      addHidden("fileName", uploadedFileName);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+
     setTimeout(() => {
       showToast("✓ Submitted successfully!", "success");
       resetForm();
       btn.disabled = false;
       btn.textContent = "Submit to Google Sheet";
+      try { document.body.removeChild(form); document.body.removeChild(iframe); } catch(e) {}
     }, 4000);
   }
 
